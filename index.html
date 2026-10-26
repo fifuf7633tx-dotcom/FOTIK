@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="bn"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FOTIK – Watch • Download • Enjoy</title><link rel="icon" href="logo.png">
+<style>
+:root{--bg:#05080f;--card:#0c1220;--line:#1b2640;--txt:#eaf2ff;--mut:#8a9bbd;--c1:#00e5ff;--c2:#1560ff}
+*{box-sizing:border-box;margin:0}body{background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,"Noto Sans Bengali",sans-serif}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:10px 16px;background:#05080fee;border-bottom:1px solid var(--line);backdrop-filter:blur(8px)}
+header img{height:44px;border-radius:50%}header .sp{flex:1}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--txt);padding:8px 14px;border-radius:999px}
+button:hover{border-color:var(--c1)}button:disabled{opacity:.6}button:focus-visible,input:focus-visible{outline:2px solid var(--c1)}
+.pri{background:linear-gradient(90deg,var(--c1),var(--c2));border:0;color:#001;font-weight:700}
+#feed{max-width:680px;margin:0 auto;padding:16px;display:grid;gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.card video{width:100%;max-height:75vh;background:#000;display:block}
+.in{padding:12px 14px}.in h3{font-size:17px}.mut{color:var(--mut);font-size:13px}
+.act{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.act button{padding:6px 12px;font-size:14px}.act .on{border-color:var(--c1);color:var(--c1)}
+.cm{border-top:1px solid var(--line);padding:10px 14px;display:none}.cm.open{display:block}
+.cm p{margin:6px 0;font-size:14px}.cm b{color:var(--c1)}.cm form{display:flex;gap:8px;margin-top:8px}
+input{width:100%;background:#070c17;color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit}
+.modal{position:fixed;inset:0;background:#000b;display:none;align-items:center;justify-content:center;z-index:9;padding:16px}.modal.open{display:flex}
+.box{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;width:100%;max-width:380px;display:grid;gap:10px}
+.empty{text-align:center;color:var(--mut);padding:60px 10px}a{color:var(--c1);cursor:pointer}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--c2);padding:10px 18px;border-radius:999px;display:none;z-index:20}
+</style></head><body>
+<header><img src="logo.png" alt="FOTIK"><b style="font-size:20px;letter-spacing:1px">FOTIK</b><span class="sp"></span>
+<button class="pri" id="upBtn">+ ভিডিও আপলোড</button><button id="authBtn">লগইন</button></header>
+<div id="feed"></div><div id="toast"></div>
+
+<div class="modal" id="authM"><form class="box" id="authF"><h2 id="authT">লগইন</h2>
+<input id="aName" placeholder="আপনার নাম" style="display:none"><input id="aMail" type="email" placeholder="ইমেইল" required>
+<input id="aPass" type="password" placeholder="পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)" minlength="6" required>
+<button class="pri" id="authGo">লগইন করুন</button><span class="mut" id="authSw"></span><button type="button" data-close>বাতিল</button></form></div>
+
+<div class="modal" id="upM"><form class="box" id="upF"><h2>নতুন ভিডিও</h2>
+<input id="uTitle" placeholder="ভিডিওর টাইটেল" maxlength="100" required><input id="uFile" type="file" accept="video/*" required>
+<button class="pri" id="upGo">পোস্ট করুন</button><button type="button" data-close>বাতিল</button></form></div>
+
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import{getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,updateProfile}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import{getDatabase,ref,onValue,push,set,remove}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import{getStorage,ref as sref,uploadBytesResumable,getDownloadURL,deleteObject}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+const app=initializeApp({apiKey:"AIzaSyCD_YU1-hqLDHFwpWugGFjh0_77eoANIcw",authDomain:"wi-pot-d802d.firebaseapp.com",databaseURL:"https://wi-pot-d802d-default-rtdb.firebaseio.com",projectId:"wi-pot-d802d",storageBucket:"wi-pot-d802d.firebasestorage.app",messagingSenderId:"227774001828",appId:"1:227774001828:android:0fce1cc89b327719d96c31"});
+const auth=getAuth(app),db=getDatabase(app),st=getStorage(app);
+const $=s=>document.querySelector(s),feed=$('#feed');
+let user=null,videos={},votes={},cmts={},signup=false;
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',3000)};
+const open=(m,o=true)=>$(m).classList.toggle('open',o);
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('.modal').classList.remove('open'));
+
+// ---- Auth ----
+function authMode(s){signup=s;$('#authT').textContent=s?'সাইন আপ':'লগইন';$('#aName').style.display=s?'block':'none';$('#aName').required=s;
+$('#authGo').textContent=s?'অ্যাকাউন্ট খুলুন':'লগইন করুন';
+$('#authSw').innerHTML=s?'আগে থেকেই অ্যাকাউন্ট আছে? <a id="sw">লগইন</a>':'অ্যাকাউন্ট নেই? <a id="sw">সাইন আপ</a>';$('#sw').onclick=()=>authMode(!signup)}
+authMode(false);
+$('#authBtn').onclick=()=>user?signOut(auth):open('#authM');
+$('#authF').onsubmit=async e=>{e.preventDefault();$('#authGo').disabled=true;
+try{if(signup){const c=await createUserWithEmailAndPassword(auth,$('#aMail').value,$('#aPass').value);await updateProfile(c.user,{displayName:$('#aName').value.trim()});user={...c.user,displayName:$('#aName').value.trim()}}
+else await signInWithEmailAndPassword(auth,$('#aMail').value,$('#aPass').value);open('#authM',false);toast('স্বাগতম!')}
+catch(err){toast(({'auth/invalid-credential':'ইমেইল বা পাসওয়ার্ড ভুল','auth/email-already-in-use':'এই ইমেইল আগেই ব্যবহার হয়েছে','auth/weak-password':'পাসওয়ার্ড দুর্বল'})[err.code]||err.code)}
+$('#authGo').disabled=false};
+onAuthStateChanged(auth,u=>{user=u;$('#authBtn').textContent=u?'লগআউট ('+(u.displayName||'ইউজার')+')':'লগইন';draw()});
+const need=()=>user||(open('#authM'),toast('আগে লগইন করুন'),null);
+
+// ---- Upload ----
+$('#upBtn').onclick=()=>need()&&open('#upM');
+$('#upF').onsubmit=async e=>{e.preventDefault();const f=$('#uFile').files[0];if(!f)return;
+if(f.size>100*1024*1024)return toast('ভিডিও ১০০MB এর বেশি হতে পারবে না');
+const b=$('#upGo');b.disabled=true;const path=`videos/${user.uid}/${Date.now()}_${f.name.replace(/[^\w.]/g,'_')}`;
+const t=uploadBytesResumable(sref(st,path),f,{contentType:f.type});
+t.on('state_changed',s=>b.textContent=Math.round(s.bytesTransferred/s.totalBytes*100)+'%',err=>{toast('আপলোড ব্যর্থ: '+err.code);b.disabled=false;b.textContent='পোস্ট করুন'},async()=>{
+const url=await getDownloadURL(t.snapshot.ref);await set(push(ref(db,'videos')),{uid:user.uid,name:user.displayName||'ইউজার',title:$('#uTitle').value.trim(),url,path,ts:Date.now()});
+b.disabled=false;b.textContent='পোস্ট করুন';$('#upF').reset();open('#upM',false);toast('ভিডিও পোস্ট হয়েছে')})};
+
+// ---- Data ----
+onValue(ref(db,'videos'),s=>{videos=s.val()||{};draw()});
+onValue(ref(db,'votes'),s=>{votes=s.val()||{};Object.keys(videos).forEach(upd)});
+onValue(ref(db,'comments'),s=>{cmts=s.val()||{};Object.keys(videos).forEach(upd)});
+
+function draw(){const only=new URLSearchParams(location.search).get('v');
+let ids=Object.keys(videos).sort((a,b)=>videos[b].ts-videos[a].ts);if(only)ids=ids.filter(i=>i===only);
+feed.innerHTML=(only?'<a href="./">← সব ভিডিও দেখুন</a>':'')+(ids.length?'':'<div class="empty">এখনো কোনো ভিডিও নেই। প্রথম ভিডিওটি আপনিই পোস্ট করুন।</div>');
+ids.forEach(id=>{const v=videos[id],d=document.createElement('div');d.className='card';d.id='c'+id;
+d.innerHTML=`<video src="${esc(v.url)}" controls playsinline preload="metadata"></video><div class="in"><h3>${esc(v.title)}</h3>
+<div class="mut">${esc(v.name)} • ${new Date(v.ts).toLocaleDateString('bn-BD')}</div>
+<div class="act"><button data-a="like"></button><button data-a="dis"></button><button data-a="cm"></button><button data-a="share">শেয়ার</button><button data-a="dl">ডাউনলোড</button>${user&&user.uid===v.uid?'<button data-a="del">ডিলিট</button>':''}</div></div>
+<div class="cm"><div class="list"></div><form><input placeholder="কমেন্ট লিখুন..." maxlength="300" required><button class="pri">পাঠান</button></form></div>`;
+d.querySelector('.act').onclick=e=>{const a=e.target.dataset.a;a&&act(id,a,e.target)};
+d.querySelector('form').onsubmit=async e=>{e.preventDefault();if(!need())return;const i=e.target.querySelector('input');
+await set(push(ref(db,'comments/'+id)),{uid:user.uid,name:user.displayName||'ইউজার',text:i.value.trim(),ts:Date.now()});i.value=''};
+feed.appendChild(d);upd(id)})}
+
+function upd(id){const d=$('#c'+id);if(!d)return;const vs=votes[id]||{},n=Object.values(vs),me=user&&vs[user.uid];
+const L=d.querySelector('[data-a=like]'),D=d.querySelector('[data-a=dis]'),C=cmts[id]||{};
+L.textContent='👍 '+n.filter(x=>x===1).length;D.textContent='👎 '+n.filter(x=>x===-1).length;L.className=me===1?'on':'';D.className=me===-1?'on':'';
+d.querySelector('[data-a=cm]').textContent='💬 '+Object.keys(C).length;
+d.querySelector('.list').innerHTML=Object.entries(C).sort((a,b)=>a[1].ts-b[1].ts).map(([k,c])=>`<p><b>${esc(c.name)}</b> ${esc(c.text)}${user&&user.uid===c.uid?` <a data-del="${k}">✕</a>`:''}</p>`).join('')||'<p class="mut">প্রথম কমেন্টটি করুন</p>';
+d.querySelectorAll('[data-del]').forEach(a=>a.onclick=()=>remove(ref(db,`comments/${id}/${a.dataset.del}`)))}
+
+async function act(id,a,btn){const v=videos[id];
+if(a==='cm')return btn.closest('.card').querySelector('.cm').classList.toggle('open');
+if(a==='share'){const u=location.origin+location.pathname+'?v='+id;try{navigator.share?await navigator.share({title:v.title,url:u}):(await navigator.clipboard.writeText(u),toast('লিংক কপি হয়েছে'))}catch{}return}
+if(a==='dl')return download(v,btn);
+if(!need())return;
+if(a==='del'){if(!confirm('ভিডিওটি ডিলিট করবেন?'))return;
+await remove(ref(db,'videos/'+id));remove(ref(db,'votes/'+id));remove(ref(db,'comments/'+id));deleteObject(sref(st,v.path)).catch(()=>{});return toast('ডিলিট হয়েছে')}
+const val=a==='like'?1:-1,r=ref(db,`votes/${id}/${user.uid}`);(votes[id]||{})[user.uid]===val?remove(r):set(r,val)}
+
+// ---- Watermarked download (FOTIK logo + name burned into every frame) ----
+async function download(v,btn){const old=btn.textContent;btn.disabled=true;
+try{const vid=document.createElement('video');vid.crossOrigin='anonymous';vid.playsInline=true;vid.src=v.url;
+await new Promise((ok,no)=>{vid.onloadedmetadata=ok;vid.onerror=no});
+const W=vid.videoWidth,H=vid.videoHeight,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+const logo=new Image();logo.src='logo.png';await logo.decode();
+const ac=new AudioContext(),dest=ac.createMediaStreamDestination();ac.createMediaElementSource(vid).connect(dest);
+const stream=c.captureStream(30);dest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+const mime=['video/mp4;codecs=avc1','video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m));
+const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:5e6}),ch=[];rec.ondataavailable=e=>e.data.size&&ch.push(e.data);
+const done=new Promise(r=>rec.onstop=r),s=Math.min(W,H)*.1;
+const frame=()=>{x.drawImage(vid,0,0,W,H);x.save();x.globalAlpha=.85;x.beginPath();x.arc(W-s*.7-s*.5,H-s*.7-s*.5+0,s*.5,0,7);x.clip();x.drawImage(logo,W-s*1.2-s*.5,H-s*1.2-s*.5,s,s);x.restore();
+x.font=`bold ${s*.38}px sans-serif`;x.textAlign='right';x.fillStyle='#fff';x.shadowColor='#000';x.shadowBlur=6;x.globalAlpha=.9;x.fillText('FOTIK',W-s*1.5-s*.5-s*.1,H-s*.7-s*.5+s*.13);x.globalAlpha=1;
+if(!vid.ended){btn.textContent=Math.round(vid.currentTime/vid.duration*100)+'%';requestAnimationFrame(frame)}};
+vid.onended=()=>setTimeout(()=>rec.stop(),200);rec.start();await ac.resume();await vid.play();frame();await done;ac.close();
+const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(ch,{type:mime.split(';')[0]}));a.download=`FOTIK_${Date.now()}.${mime.includes('mp4')?'mp4':'webm'}`;a.click();toast('ডাউনলোড সম্পন্ন')}
+catch(e){console.error(e);toast('ডাউনলোড ব্যর্থ — README এর CORS ধাপটি করেছেন তো?')}
+btn.disabled=false;btn.textContent=old}
+</script></body></html>

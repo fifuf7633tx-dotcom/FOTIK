@@ -1,0 +1,5 @@
+{"rules":{
+ "videos":{".read":true,"$id":{".write":"auth!=null && (!data.exists() || data.child('uid').val()===auth.uid) && (!newData.exists() || newData.child('uid').val()===auth.uid)",".validate":"!newData.exists() || newData.hasChildren(['uid','title','url','path','ts'])"}},
+ "votes":{".read":true,"$vid":{"$uid":{".write":"auth!=null && auth.uid===$uid",".validate":"newData.val()===1 || newData.val()===-1"},".write":"auth!=null && !newData.exists() && root.child('videos/'+$vid).val()===null || false"}},
+ "comments":{".read":true,"$vid":{"$cid":{".write":"auth!=null && (!data.exists() || data.child('uid').val()===auth.uid) && (!newData.exists() || newData.child('uid').val()===auth.uid)"}}}
+}}
